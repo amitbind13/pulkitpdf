@@ -1,0 +1,79 @@
+name: Mule Basejob Pipeline
+
+on:
+  workflow_dispatch:
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Check out repository
+      uses: actions/checkout@v2
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v2
+      with:
+        node-version: 14
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Run script to create baseline repo
+      run: npm run mule-basejob-pipeline
+
+  configure:
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out baseline repository
+      uses: actions/checkout@v2
+      with:
+        repository: ${{ env.BASELINE_REPO }}
+        token: ${{ secrets.GITHUB_TOKEN }}
+        ref: main
+
+    - name: Set up base files
+      run: |
+        # Add your base files and directories here, e.g.:
+        echo "# MuleSoft Baseline Repository" > README.md
+        echo "This repository contains the baseline configurations for MuleSoft applications." >> README.md
+        mkdir src
+        touch src/.gitkeep
+
+    - name: Commit and push changes
+      run: |
+        git config user.name "GitHub Actions"
+        git config user.email "actions@github.com"
+        git add .
+        git commit -m "Set up baseline files and directories"
+        git push
+
+    - name: Create develop branch
+      run: |
+        git checkout -b develop
+        git push --set-upstream origin develop
+
+    - name: Set branch protection rules
+      uses: octokit/request-action@v2.x
+      with:
+        route: PUT /repos/:owner/:repo/branches/:branch/protection
+        owner: ${{ github.repository_owner }}
+        repo: ${{ env.BASELINE_REPO }}
+        branch: main
+        required_status_checks: '{"strict":true,"contexts":[]}'
+        enforce_admins: true
+        required_pull_request_reviews: '{"dismiss_stale_reviews":true,"require_code_owner_reviews":false}'
+        restrictions: '{}'
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Set up webhook
+      uses: octokit/request-action@v2.x
+      with:
+        route: POST /repos/:owner/:repo/hooks
+        owner: ${{ github.repository_owner }}
+        repo: ${{ env.BASELINE_REPO }}
+        events: '["push", "pull_request"]'
+        config: '{"url":"https://your-webhook-url.com","content_type":"json"}'
+        active: true
+        token: ${{ secrets.GITHUB_TOKEN }}
